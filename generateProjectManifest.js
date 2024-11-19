@@ -8,7 +8,7 @@ function isAllowedFile(filename) {
 }
 
 function createFileNode(basePath, itemPath) {
-  const relativePath = "/project/" + path.relative(basePath, itemPath);
+  const relativePath = "project/" + path.relative(basePath, itemPath);
   const stats = fs.statSync(itemPath);
   const isDirectory = stats.isDirectory();
 
