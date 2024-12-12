@@ -1,0 +1,114 @@
+cmake_minimum_required(VERSION 3.10)
+
+# Enable verbose make output
+set(CMAKE_VERBOSE_MAKEFILE ON)
+
+# Normalize paths to avoid inconsistencies
+get_filename_component(USER_SRC_DIR "${USER_SRC_DIR}" ABSOLUTE)
+get_filename_component(LVGL_SRC_DIR "${LVGL_SRC_DIR}" ABSOLUTE)
+get_filename_component(LVGL_CONF_DIR "${LVGL_CONF_DIR}" ABSOLUTE)
+
+# Set project and settings
+project(${PROJECT_NAME} LANGUAGES C)
+set(CMAKE_C_STANDARD 11)
+set(CMAKE_C_STANDARD_REQUIRED ON)
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -s USE_SDL=2")
+set(CMAKE_EXECUTABLE_SUFFIX ".js")
+
+set(LV_CONF_PATH "${LVGL_CONF_DIR}/lv_conf.h")
+set(LV_CONF_BUILD_DISABLE_EXAMPLES true)
+set(LV_CONF_BUILD_DISABLE_DEMOS true)
+
+# Define common include directories once
+set(COMMON_INCLUDE_DIRS
+    ${CMAKE_SOURCE_DIR}
+    ${CMAKE_SOURCE_DIR}/src
+    ${CMAKE_SOURCE_DIR}/lvgl
+    ${LVGL_SRC_DIR}
+    ${LVGL_SRC_DIR}/src/others/xml
+    ${LVGL_SRC_DIR}/src
+    ${LVGL_CONF_DIR}
+    ${USER_SRC_DIR}/widgets
+    ${USER_SRC_DIR}
+)
+
+# Find all user sources
+if(USER_SRC_DIR AND EXISTS "${USER_SRC_DIR}/widgets")
+    file(GLOB USER_SOURCES "${USER_SRC_DIR}/widgets/*/*.c")
+    # Write USER_SOURCES to a log file
+    file(WRITE "${OUTPUT_DIR}/build.log" "User sources found:\n")
+    foreach(source ${USER_SOURCES})
+        file(APPEND "${OUTPUT_DIR}/build.log" "${source}\n")
+    endforeach()
+endif()
+
+# Set project sources
+set(PROJECT_SOURCES
+    "${USER_SRC_DIR}/ui.c"
+    "${USER_SRC_DIR}/example.c"
+    "${CMAKE_SOURCE_DIR}/src/getrandom_compat.c"
+    "${CMAKE_SOURCE_DIR}/src/runtime.c"
+)
+
+# Create the executable with all sources
+add_executable(${PROJECT_NAME} 
+    ${PROJECT_SOURCES}
+    ${USER_SOURCES}  # Add all user sources directly
+)
+
+# Set include directories for the main executable
+target_include_directories(${PROJECT_NAME} PRIVATE ${COMMON_INCLUDE_DIRS})
+
+# Make sure LVGL configuration is properly set
+target_compile_definitions(${PROJECT_NAME} PRIVATE
+    LV_CONF_INCLUDE_SIMPLE
+    LV_CONF_PATH="${LVGL_CONF_DIR}/lv_conf.h"
+)
+
+# Link libraries
+target_link_libraries(${PROJECT_NAME} PRIVATE
+    "${CMAKE_SOURCE_DIR}/lib/liblvgl.a"
+    m
+)
+
+# Define exported functions before link flags
+set(BASE_EXPORTED_FUNCTIONS
+    "['_malloc', '_free', \
+    '_lvrt_initialize', '_lvrt_task_handler', '_do_loop', \
+    '_lvrt_process_file', '_lvrt_process_data', \
+    '_lvrt_xml_load_component_data', '_lvrt_xml_load_component_file', \
+    '_lvrt_register_image', '_lvrt_register_font', '_lvrt_cleanup_runtime']"
+)
+
+# Combine with additional functions if provided and log the information
+file(APPEND "${OUTPUT_DIR}/build.log" "\nExported functions:\n")
+if(DEFINED ADDITIONAL_EXPORTED_FUNCTIONS)
+    # Remove any brackets and trailing commas from ADDITIONAL_EXPORTED_FUNCTIONS
+    string(REGEX REPLACE "[][]" "" CLEANED_ADDITIONAL_FUNCTIONS "${ADDITIONAL_EXPORTED_FUNCTIONS}")
+    string(REGEX REPLACE ",[ ]*$" "" CLEANED_ADDITIONAL_FUNCTIONS "${CLEANED_ADDITIONAL_FUNCTIONS}")
+    string(REPLACE "]" ", ${CLEANED_ADDITIONAL_FUNCTIONS}]" ALL_EXPORTED_FUNCTIONS "${BASE_EXPORTED_FUNCTIONS}")
+    file(APPEND "${OUTPUT_DIR}/build.log" "Additional exported functions: ${CLEANED_ADDITIONAL_FUNCTIONS}\n")
+else()
+    set(ALL_EXPORTED_FUNCTIONS "${BASE_EXPORTED_FUNCTIONS}")
+    file(APPEND "${OUTPUT_DIR}/build.log" "No additional exported functions provided\n")
+endif()
+file(APPEND "${OUTPUT_DIR}/build.log" "All exported functions: ${ALL_EXPORTED_FUNCTIONS}\n")
+
+#set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -s EXPORTED_FUNCTIONS=[${ALL_EXPORTED_FUNCTIONS}]")
+
+# Set target properties with the exported functions
+set_target_properties(${PROJECT_NAME} PROPERTIES
+    COMPILE_FLAGS "--use-port=sdl2"
+    LINK_FLAGS "--no-entry -s WASM=0 -s USE_WEBGL2=0 -s ALLOW_MEMORY_GROWTH=1 \
+    -s EXPORTED_FUNCTIONS='${ALL_EXPORTED_FUNCTIONS}' \
+    -s EXPORT_NAME='createModule' \
+    -s FORCE_FILESYSTEM=1 \
+    -s EXPORTED_RUNTIME_METHODS='[\"ccall\", \"cwrap\", \"FS\", \"addFunction\"]' \
+    -s MODULARIZE=1 \
+    -s USE_SDL=2 \
+    -s ENVIRONMENT=web"
+)
+
+set_target_properties(${PROJECT_NAME} PROPERTIES
+  RUNTIME_OUTPUT_DIRECTORY "${OUTPUT_DIR}"
+)
