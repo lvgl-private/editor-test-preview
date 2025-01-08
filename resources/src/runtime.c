@@ -1,15 +1,38 @@
 #include "runtime.h"
+#include "ui.h"
 #include <dirent.h>
 #include <lvgl/demos/lv_demos.h>
 #include <lvgl/src/libs/tiny_ttf/lv_tiny_ttf.h>
+#include <lvgl/src/core/lv_obj.h>
 
 #define SDL_HINT_EMSCRIPTEN_CANVAS_SELECTOR "SDL_EMSCRIPTEN_CANVAS_SELECTOR"
+
+// Add this function to expose logs to JavaScript
+EM_JS(void, js_log_callback, (const char* message), {
+    //console.log("js_log_callback called with:", UTF8ToString(message));  // Debug print
+    if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('lvgl-log', { detail: UTF8ToString(message) }));
+    }
+});
+
+// Modify or add this log callback
+void lvrt_log_cb(int8_t level, const char* buf)
+{
+    //printf("Log callback called: level=%d, msg=%s\n", level, buf);  // Debug print
+    js_log_callback(buf);
+}
+
+// Add at the top with other globals
+static lv_obj_t* g_fullscreen_obj = NULL;
 
 int lvrt_initialize(const char *canvas_selector){
 
   /* Initialize LVGL */
 
   lv_init();
+  lv_log_register_print_cb(lvrt_log_cb);
+
+  LV_LOG_USER("Initializing LVGL");
 
   int monitor_hor_res = 320;
   int monitor_ver_res = 240;
@@ -34,18 +57,14 @@ int lvrt_initialize(const char *canvas_selector){
   lv_indev_t * mousewheel = lv_sdl_mousewheel_create();
   lv_indev_set_group(mousewheel, group);
 
+  /* Unfortunately when using keyboard support with emscripten, the canvas/app seems to capture
+   * all keyboard events, and input cannot be used elsewhere in the webview window.
+   */
+
   /*lv_indev_t * keyboard = lv_sdl_keyboard_create();
   lv_indev_set_group(keyboard, group);*/
   
   lv_obj_t *screen = lv_display_get_screen_active(display);
-
-  /*lv_obj_set_style_bg_opa(lv_screen_active(), LV_OPA_TRANSP, LV_PART_MAIN);
-
-  lv_obj_set_style_bg_opa(lv_layer_bottom(), LV_OPA_TRANSP, LV_PART_MAIN);
-
-  lv_display_set_color_format(display, LV_COLOR_FORMAT_ARGB8888);*/
-
-  lvrt_task_handler();
 
   emscripten_set_main_loop_arg(do_loop, NULL, 0, 0);
 
@@ -105,12 +124,12 @@ int lvrt_process_file(const char *path) {
 EMSCRIPTEN_KEEPALIVE
 int lvrt_process_data(const char *xml_definition){
 
-  lv_obj_clean(lv_screen_active()); 
-
   lv_obj_t *screen = lv_screen_active();
+  lv_display_t *display = lv_display_get_default();
+  
+  lv_obj_clean(screen);
 
   lv_xml_component_unregister("thisview");
-
   lv_result_t result = lv_xml_component_register_from_data("thisview", xml_definition);
 
   if(result != LV_RESULT_OK){
@@ -118,23 +137,17 @@ int lvrt_process_data(const char *xml_definition){
     return 1;
   }
 
-  /*const char * attrs[] = {
-        "width", "320",
-        "height", "240",
-        NULL, NULL,
-    };*/
-
   lv_obj_t * ui = lv_xml_create(screen, "thisview", NULL);
   
   if(ui == NULL){
-    LV_LOG_ERROR("Ouch!");
+    LV_LOG_ERROR("Ouch! UI is null.");
     return 1;
   }
-  
-  lvrt_task_handler();
+
+  LV_LOG_USER("After creating new UI:");
+  lv_refr_now(NULL);
 
   return 0;
-
 }
 
 EMSCRIPTEN_KEEPALIVE
@@ -162,8 +175,10 @@ int lvrt_xml_load_component_file(const char *path) {
   return 1;
 }
 
-void new_read_dir(const char * path)
+EMSCRIPTEN_KEEPALIVE
+void lvrt_xml_read_dir(const char * path)
 {
+    LV_LOG_USER("Reading directory %s", path);
     lv_fs_dir_t dir;
     lv_fs_res_t res;
     res = lv_fs_dir_open(&dir, path);
@@ -192,6 +207,7 @@ void new_read_dir(const char * path)
 }
 
 static int lvrt_register_resource(const char *name, const char *src_path, const unsigned char *data, size_t data_length, resource_type_t type, const resource_config_t* config) {
+    
     const char *type_str = (type == RESOURCE_TYPE_IMAGE) ? "image" : "font";
 
     if (name == NULL || data == NULL || src_path == NULL) {
@@ -217,7 +233,7 @@ static int lvrt_register_resource(const char *name, const char *src_path, const 
     lv_fs_file_t f;
     lv_fs_res_t res = lv_fs_open(&f, src_path, LV_FS_MODE_WR);
     if(res != LV_FS_RES_OK) {
-        LV_LOG_ERROR("Failed to create %s file", type_str);
+        LV_LOG_ERROR("Failed to create %s file %s", type_str, src_path);
         return 1;
     }
     
@@ -298,5 +314,35 @@ void check_file(const char* filepath) {
         lv_fs_close(&f);
     } else {
         LV_LOG_ERROR("Failed to open file: %s", filepath);
+    }
+}
+
+// Add this helper function to trigger clicks
+EMSCRIPTEN_KEEPALIVE
+void lvrt_click_fullscreen() {
+
+}
+
+void lvrt_print_obj_tree(lv_obj_t* obj, int level) {
+    if (obj == NULL) return;
+    
+    // Print indentation based on level
+    for (int i = 0; i < level; i++) {
+        //LV_LOG_USER("  ");
+    }
+    
+    // Print object info without accessing class structure directly
+    lv_coord_t x = lv_obj_get_x(obj);
+    lv_coord_t y = lv_obj_get_y(obj);
+    lv_coord_t width = lv_obj_get_width(obj);
+    lv_coord_t height = lv_obj_get_height(obj);
+    
+    LV_LOG_USER("Object at pos(%d,%d) size(%dx%d)", x, y, width, height);
+    
+    // Recursively print children
+    uint32_t child_cnt = lv_obj_get_child_cnt(obj);
+    for (uint32_t i = 0; i < child_cnt; i++) {
+        lv_obj_t* child = lv_obj_get_child(obj, i);
+        lvrt_print_obj_tree(child, level + 1);
     }
 }

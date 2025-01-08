@@ -55,12 +55,13 @@ void lvrt_cleanup();
 int lvrt_process_data(const char *data);
 int lvrt_process_file(const char *path);
 int lvrt_register_component(const char *name, const char *xml_definition);
-void capture_sdl_screenshot(uint8_t* buffer)  ;
+void capture_sdl_screenshot(uint8_t* buffer);
 //int lvrt_dom_tree_to_js(lv_dom_node_t *root_node);
-void list_directory(const char* path);
+void lvrt_xml_read_dir(const char * path);
 void check_file(const char* filepath);
 int lvrt_register_image(const char *name, const char *src_path, const unsigned char *image_data, size_t data_length, const char *file_format);
 int lvrt_register_font(const char *name, const char *src_path, const unsigned char *font_data, size_t data_length, int32_t font_size);
+void lvrt_print_obj_tree(lv_obj_t* obj, int level);
 
 #endif /* RUNTIME_H */
 

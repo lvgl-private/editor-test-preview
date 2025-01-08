@@ -29,31 +29,37 @@ set(COMMON_INCLUDE_DIRS
     ${LVGL_SRC_DIR}/src
     ${LVGL_CONF_DIR}
     ${USER_SRC_DIR}/widgets
+    ${USER_SRC_DIR}/components
     ${USER_SRC_DIR}
 )
 
 # Find all user sources
 if(USER_SRC_DIR AND EXISTS "${USER_SRC_DIR}/widgets")
-    file(GLOB USER_SOURCES "${USER_SRC_DIR}/widgets/*/*.c")
-    # Write USER_SOURCES to a log file
-    file(WRITE "${OUTPUT_DIR}/build.log" "User sources found:\n")
-    foreach(source ${USER_SOURCES})
-        file(APPEND "${OUTPUT_DIR}/build.log" "${source}\n")
-    endforeach()
+    file(GLOB WIDGET_SOURCES "${USER_SRC_DIR}/widgets/*/*.c")
 endif()
+
+if(USER_SRC_DIR AND EXISTS "${USER_SRC_DIR}/components")
+    file(GLOB COMPONENT_SOURCES "${USER_SRC_DIR}/components/*.c""${USER_SRC_DIR}/components/*/*.c")
+endif()
+
+file(GLOB ALL_COMPONENT_FILES "${USER_SRC_DIR}/*/*")
+file(APPEND "${OUTPUT_DIR}/build.log" "\nAll files in components directory:\n${COMPONENT_SOURCES}\n")
+
+# Find all source files in USER_SRC_DIR and CMAKE_SOURCE_DIR/src
+file(GLOB USER_SOURCES "${USER_SRC_DIR}/*.c")
+file(GLOB CMAKE_SOURCES "${CMAKE_SOURCE_DIR}/src/*.c")
 
 # Set project sources
 set(PROJECT_SOURCES
-    "${USER_SRC_DIR}/ui.c"
-    "${USER_SRC_DIR}/example.c"
-    "${CMAKE_SOURCE_DIR}/src/getrandom_compat.c"
-    "${CMAKE_SOURCE_DIR}/src/runtime.c"
+    ${USER_SOURCES}
+    ${CMAKE_SOURCES}
 )
 
 # Create the executable with all sources
 add_executable(${PROJECT_NAME} 
     ${PROJECT_SOURCES}
-    ${USER_SOURCES}  # Add all user sources directly
+    ${WIDGET_SOURCES}
+    ${COMPONENT_SOURCES}
 )
 
 # Set include directories for the main executable
@@ -74,10 +80,10 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
 # Define exported functions before link flags
 set(BASE_EXPORTED_FUNCTIONS
     "['_malloc', '_free', \
-    '_lvrt_initialize', '_lvrt_task_handler', '_do_loop', \
+    '_lvrt_initialize', '_ui_init', '_lvrt_task_handler', '_do_loop', \
     '_lvrt_process_file', '_lvrt_process_data', \
     '_lvrt_xml_load_component_data', '_lvrt_xml_load_component_file', \
-    '_lvrt_register_image', '_lvrt_register_font', '_lvrt_cleanup_runtime']"
+    '_lvrt_register_image', '_lvrt_register_font', '_lvrt_cleanup_runtime', '_lvrt_xml_read_dir', \ '_lvrt_click_fullscreen', 'UTF8ToString']"
 )
 
 # Combine with additional functions if provided and log the information
